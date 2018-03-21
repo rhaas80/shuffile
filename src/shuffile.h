@@ -45,19 +45,19 @@ int shuffile_init();
 /* shutdown library */
 int shuffile_finalize();
 
-/* apply redundancy scheme to file and return number of bytes copied
- * in bytes parameter */
+/* associate a set of files with the calling process */
 int shuffile_create(
-  int numfiles,
-  const char** files,
-  const char* name
+  int numfiles,       /* number of files */
+  const char** files, /* array of file names */
+  const char* name    /* path name to store association information */
 );
 
+/* migrate files to owner process, if necessary */
 int shuffile_dance(
-  const char* name
+  const char* name /* path name containing association information */
 );
 
-/* deletes redundancy data that was added in shuffile_reddesc_apply,
+/* drop association information,
  * which is useful when cleaning up */
 int shuffile_remove(
   const char* name

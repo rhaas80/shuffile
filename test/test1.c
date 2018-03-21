@@ -38,10 +38,13 @@ int main (int argc, char* argv[])
 
   shuffile_init();
 
+  /* associate files in filelist with calling process */
   shuffile_create(1, filelist, "/tmp/shuffle");
 
+  /* migrate files back to owner process */
   shuffile_dance("/tmp/shuffle");
 
+  /* delete association information */
   //shuffile_remove("/tmp/shuffle");
 
   shuffile_finalize();

@@ -9,6 +9,7 @@
 
 #define SHUFFILE_MAX_FILENAME (1024)
 
+extern MPI_Comm shuffile_comm;
 extern int shuffile_rank;
 extern char* shuffile_hostname;
 

@@ -27,6 +27,7 @@
 
 int shuffile_debug = 1;
 
+MPI_Comm shuffile_comm = MPI_COMM_NULL;
 int shuffile_rank = -1;
 char* shuffile_hostname = NULL;
 
@@ -80,7 +81,7 @@ void shuffile_abort(int rc, const char *fmt, ...)
   va_end(argp);
   fprintf(stderr, "\n");
 
-  MPI_Abort(MPI_COMM_WORLD, rc);
+  MPI_Abort(shuffile_comm, rc);
 }
 
 /* allocate size bytes, returns NULL if size == 0,

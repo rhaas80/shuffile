@@ -38,8 +38,12 @@ int shuffile_init()
   /* set MPI buffer size */
   shuffile_mpi_buf_size = 1024 * 1024;
 
+  /* TODO: allow other process groups */
+  /* duplicate MPI_COMM_WORLD */
+  MPI_Comm_dup(MPI_COMM_WORLD, &shuffile_comm);
+
   /* set our global rank */
-  MPI_Comm_rank(MPI_COMM_WORLD, &shuffile_rank);
+  MPI_Comm_rank(shuffile_comm, &shuffile_rank);
 
   return SHUFFILE_SUCCESS;
 }
@@ -47,6 +51,7 @@ int shuffile_init()
 int shuffile_finalize()
 {
   shuffile_free(&shuffile_hostname);
+  MPI_Comm_free(&shuffile_comm);
   return SHUFFILE_SUCCESS;
 }
 
@@ -78,7 +83,7 @@ int shuffile_create(
   const char** files,
   const char* name)
 {
-  MPI_Comm comm_world = MPI_COMM_WORLD;
+  MPI_Comm comm_world = shuffile_comm;
 
   /* get name of process */
   int rank_world;
@@ -109,7 +114,7 @@ int shuffile_create(
   return SHUFFILE_SUCCESS;
 }
 
-/* deletes redundancy data that was added in shuffile_reddesc_apply,
+/* drop association information,
  * which is useful when cleaning up */
 int shuffile_remove(const char* name)
 {
@@ -117,7 +122,7 @@ int shuffile_remove(const char* name)
   return SHUFFILE_SUCCESS;
 }
 
-/* move files back to owning ranks */
+/* migrate files to owner process, if necessary */
 int shuffile_dance(const char* name)
 {
   int i, round;
@@ -125,7 +130,7 @@ int shuffile_dance(const char* name)
 
   /* get name of this process */
   int rank_world;
-  MPI_Comm comm_world = MPI_COMM_WORLD;
+  MPI_Comm comm_world = shuffile_comm;
   MPI_Comm_rank(comm_world, &rank_world);
 
   /* allocate an object to record new shuffle file info */
