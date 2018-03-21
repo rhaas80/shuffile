@@ -1,0 +1,449 @@
+/*
+ * Copyright (c) 2009, Lawrence Livermore National Security, LLC.
+ * Produced at the Lawrence Livermore National Laboratory.
+ * Written by Adam Moody <moody20@llnl.gov>.
+ * LLNL-CODE-411039.
+ * All rights reserved.
+ * This file is part of The Scalable Checkpoint / Restart (SCR) library.
+ * For details, see https://sourceforge.net/projects/scalablecr/
+ * Please also read this file: LICENSE.TXT.
+*/
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <limits.h>
+#include <unistd.h>
+
+#include "mpi.h"
+
+#include "kvtree.h"
+#include "kvtree_util.h"
+
+#include "shuffile_util.h"
+#include "shuffile_io.h"
+#include "shuffile.h"
+
+int shuffile_init()
+{
+  /* read our hostname */
+  char hostname[HOST_NAME_MAX + 1];
+  gethostname(hostname, sizeof(hostname));
+  shuffile_hostname = strdup(hostname);
+
+  /* get page size */
+  shuffile_page_size = sysconf(_SC_PAGESIZE);
+
+  /* set MPI buffer size */
+  shuffile_mpi_buf_size = 1024 * 1024;
+
+  /* set our global rank */
+  MPI_Comm_rank(MPI_COMM_WORLD, &shuffile_rank);
+
+  return SHUFFILE_SUCCESS;
+}
+
+int shuffile_finalize()
+{
+  shuffile_free(&shuffile_hostname);
+  return SHUFFILE_SUCCESS;
+}
+
+/* delete each file for given process name, and remove entries from hash */
+static int shuffile_unlink(kvtree* hash, int rank)
+{
+  /* loop over files for given process name and delete them */
+  kvtree_elem* elem;
+  kvtree* rank_hash = kvtree_get_kv_int(hash, "RANK", rank);
+  kvtree* file_hash = kvtree_get(rank_hash, "FILE");
+  for (elem = kvtree_elem_first(file_hash);
+       elem != NULL;
+       elem = kvtree_elem_next(elem))
+  {
+    /* delete the file */
+    const char* file = kvtree_elem_key(elem);
+    shuffile_file_unlink(file);
+  }
+
+  /* delete entries from hash for this rank */
+  kvtree_unset_kv_int(hash, "RANK", rank);
+
+  return 0;
+}
+
+/* associate a set of files with a named process */
+int shuffile_create(
+  int numfiles,
+  const char** files,
+  const char* name)
+{
+  MPI_Comm comm_world = MPI_COMM_WORLD;
+
+  /* get name of process */
+  int rank_world;
+  MPI_Comm_rank(comm_world, &rank_world);
+
+  /* create an empty list */
+  kvtree* list = kvtree_new();
+
+  /* create a space for data for this process */
+  kvtree* rank_hash = kvtree_set_kv_int(list, "RANK", rank_world);
+
+  /* record number of files */
+  kvtree_set_kv_int(rank_hash, "FILES", numfiles);
+
+  /* record each file name */
+  int i;
+  for (i = 0; i < numfiles; i++) {
+    const char* file = files[i];
+    kvtree_set_kv(rank_hash, "FILE", file);
+  }
+
+  /* store list to shuffle file */
+  kvtree_write_file(name, list);
+
+  /* free the list */
+  kvtree_delete(&list);
+
+  return SHUFFILE_SUCCESS;
+}
+
+/* deletes redundancy data that was added in shuffile_reddesc_apply,
+ * which is useful when cleaning up */
+int shuffile_remove(const char* name)
+{
+  shuffile_file_unlink(name);
+  return SHUFFILE_SUCCESS;
+}
+
+/* move files back to owning ranks */
+int shuffile_dance(const char* name)
+{
+  int i, round;
+  int rc = SHUFFILE_SUCCESS;
+
+  /* get name of this process */
+  int rank_world;
+  MPI_Comm comm_world = MPI_COMM_WORLD;
+  MPI_Comm_rank(comm_world, &rank_world);
+
+  /* allocate an object to record new shuffle file info */
+  kvtree* new_hash = kvtree_new();
+  kvtree* new_rank_hash = kvtree_set_kv_int(new_hash, "RANK", rank_world);
+
+  /* read data from shuffile file */
+  kvtree* hash = kvtree_new();
+  kvtree_read_file(name, hash);
+
+  /* TODO: support arbitrary process names */
+
+  /* get pointer to ranks hash */
+  kvtree* ranks_hash = kvtree_get(hash, "RANK");
+
+  /* for this dataset, get list of ranks we have data for */
+  int  nranks = 0;
+  int* ranks = NULL;
+  //kvtree_sort_int(ranks_hash, KVTREE_SORT_ASCENDING);
+  kvtree_list_int(ranks_hash, &nranks, &ranks);
+
+  /* walk backwards through the list of ranks, and set our start index
+   * to the rank which is the first rank that is equal to or higher
+   * than our own rank -- when we assign round ids below, this offsetting
+   * helps distribute the load */
+  int start_index = 0;
+  for (i = nranks-1; i >= 0; i--) {
+    /* pick the first rank whose rank id is equal to or higher than our own */
+    int rank = ranks[i];
+    if (rank >= rank_world) {
+      start_index = i;
+    }
+  }
+
+  /* TODO: check that a process accounts for every name */
+
+  /* allocate array to record the rank we can send to in each round */
+  int* have_rank_by_round = (int*) SHUFFILE_MALLOC(sizeof(int) * nranks);
+  int* send_flag_by_round = (int*) SHUFFILE_MALLOC(sizeof(int) * nranks);
+
+  /* check that we have all of the files for each rank,
+   * and determine the round we can send them */
+  kvtree* send_hash = kvtree_new();
+  kvtree* recv_hash = kvtree_new();
+  for (round = 0; round < nranks; round++) {
+    /* get the rank id */
+    int index = (start_index + round) % nranks;
+    int rank = ranks[index];
+
+    /* record the rank indexed by the round number */
+    have_rank_by_round[round] = rank;
+
+    /* assume we won't be sending to this rank in this round */
+    send_flag_by_round[round] = 0;
+
+    /* if we have files for this rank, specify the round we can
+     * send those files in */
+    //if (kvtree_have_files(map, id, rank)) {
+      kvtree_setf(send_hash, NULL, "%d %d", rank, round);
+    //}
+  }
+  kvtree_exchange(send_hash, recv_hash, comm_world);
+
+  /* search for the minimum round we can get our files */
+  int retrieve_rank  = -1;
+  int retrieve_round = -1;
+  kvtree_elem* elem = NULL;
+  for (elem = kvtree_elem_first(recv_hash);
+       elem != NULL;
+       elem = kvtree_elem_next(elem))
+  {
+    /* get the rank id */
+    int rank = kvtree_elem_key_int(elem);
+
+    /* get the round id */
+    kvtree* round_hash = kvtree_elem_hash(elem);
+    kvtree_elem* round_elem = kvtree_elem_first(round_hash);
+    char* round_str = kvtree_elem_key(round_elem);
+    int round = atoi(round_str);
+
+    /* record this round and rank number if it's less than the current round */
+    if (round < retrieve_round || retrieve_round == -1) {
+      retrieve_round = round;
+      retrieve_rank  = rank;
+    }
+  }
+
+  /* done with the round hashes, free them off */
+  kvtree_delete(&recv_hash);
+  kvtree_delete(&send_hash);
+
+  /* free off our list of ranks */
+  shuffile_free(&ranks);
+
+  /* get the maximum retrieve round */
+  int max_rounds = 0;
+  MPI_Allreduce(
+    &retrieve_round, &max_rounds, 1, MPI_INT, MPI_MAX, comm_world
+  );
+
+  /* tell destination which round we'll take our files in */
+  send_hash = kvtree_new();
+  recv_hash = kvtree_new();
+  if (retrieve_rank != -1) {
+    kvtree_setf(send_hash, NULL, "%d %d", retrieve_rank, retrieve_round);
+  }
+  kvtree_exchange(send_hash, recv_hash, comm_world);
+
+  /* determine which ranks want to fetch their files from us */
+  for(elem = kvtree_elem_first(recv_hash);
+      elem != NULL;
+      elem = kvtree_elem_next(elem))
+  {
+    /* get the round id */
+    kvtree* round_hash = kvtree_elem_hash(elem);
+    kvtree_elem* round_elem = kvtree_elem_first(round_hash);
+    char* round_str = kvtree_elem_key(round_elem);
+    int round = atoi(round_str);
+
+    /* record whether this rank wants its files from us */
+    if (round >= 0 && round < nranks) {
+      send_flag_by_round[round] = 1;
+    }
+  }
+
+  /* done with the round hashes, free them off */
+  kvtree_delete(&recv_hash);
+  kvtree_delete(&send_hash);
+
+  int tmp_rc = 0;
+
+  /* run through rounds and exchange files */
+  for (round = 0; round <= max_rounds; round++) {
+    /* assume we don't need to send or receive any files this round */
+    int send_rank = MPI_PROC_NULL;
+    int recv_rank = MPI_PROC_NULL;
+    int send_num  = 0;
+    int recv_num  = 0;
+
+    /* check whether I can potentially send to anyone in this round */
+    if (round < nranks) {
+      /* have someone's files, check whether they are asking
+       * for them this round */
+      if (send_flag_by_round[round]) {
+        /* need to send files this round, remember to whom and how many */
+        int dst_rank = have_rank_by_round[round];
+        send_rank = dst_rank;
+        kvtree* rank_hash = kvtree_get_kv_int(hash, "RANK", dst_rank);
+        kvtree_util_get_int(rank_hash, "FILES", &send_num);
+      }
+    }
+
+    /* if I'm supposed to get my files this round, set the recv_rank */
+    if (retrieve_round == round) {
+      recv_rank = retrieve_rank;
+    }
+
+    /* if we have files for this round, but the correspdonding
+     * rank doesn't need them, delete the files */
+    if (round < nranks && send_rank == MPI_PROC_NULL) {
+      int dst_rank = have_rank_by_round[round];
+      shuffile_unlink(hash, dst_rank);
+    }
+
+    /* sending to and/or recieving from another node */
+    if (send_rank != MPI_PROC_NULL || recv_rank != MPI_PROC_NULL) {
+      /* have someone to send to or receive from */
+      int have_outgoing = 0;
+      int have_incoming = 0;
+      if (send_rank != MPI_PROC_NULL) {
+        have_outgoing = 1;
+      }
+      if (recv_rank != MPI_PROC_NULL) {
+        have_incoming = 1;
+      }
+
+      /* first, determine how many files I will be receiving and
+       * tell how many I will be sending */
+      MPI_Request request[2];
+      MPI_Status  status[2];
+      int num_req = 0;
+      if (have_incoming) {
+        MPI_Irecv(
+          &recv_num, 1, MPI_INT, recv_rank, 0,
+          comm_world, &request[num_req]
+        );
+        num_req++;
+      }
+      if (have_outgoing) {
+        MPI_Isend(
+          &send_num, 1, MPI_INT, send_rank, 0,
+          comm_world, &request[num_req]
+        );
+        num_req++;
+      }
+      if (num_req > 0) {
+        MPI_Waitall(num_req, request, status);
+      }
+
+      /* record how many files I will receive (need to distinguish
+       * between 0 files and not knowing) */
+      if (have_incoming) {
+        kvtree_util_set_int(new_rank_hash, "FILES", recv_num);
+      }
+
+      /* turn off send or receive flags if the file count is 0,
+       * nothing else to do */
+      if (send_num == 0) {
+        have_outgoing = 0;
+        send_rank = MPI_PROC_NULL;
+      }
+      if (recv_num == 0) {
+        have_incoming = 0;
+        recv_rank = MPI_PROC_NULL;
+      }
+
+      /* TODO: since we overwrite files in place in order to avoid
+       * running out of storage space, we should sort files in order
+       * of descending size for the next step */
+
+      /* get our file list for the destination */
+      int numfiles = 0;
+      const char** files = NULL;
+      if (have_outgoing) {
+        files = (const char**) SHUFFILE_MALLOC(send_num * sizeof(char*));
+        kvtree_elem* elem;
+        kvtree* rank_hash = kvtree_get_kv_int(hash, "RANK", send_rank);
+        kvtree* file_hash = kvtree_get(rank_hash, "FILE");
+        for (elem = kvtree_elem_first(file_hash);
+             elem != NULL;
+             elem = kvtree_elem_next(elem))
+        {
+          const char* filename = kvtree_elem_key(elem);
+          files[numfiles] = filename;
+          numfiles++;
+        }
+      }
+
+      /* while we have a file to send or receive ... */
+      while (have_incoming || have_outgoing) {
+        /* get the filename */
+        const char* file = NULL;
+        if (have_outgoing) {
+          file = files[numfiles - send_num];
+        }
+
+        /* exhange file names with partners,
+         * building full path of incoming file */
+        char file_partner[SHUFFILE_MAX_FILENAME];
+        shuffile_swap_file_names(
+          file, send_rank, file_partner, sizeof(file_partner), recv_rank,
+          ".", comm_world
+        );
+
+        /* if we'll receive a file, record the name of our file
+         * in the filemap and write it to disk */
+        if (recv_rank != MPI_PROC_NULL) {
+          kvtree_set_kv(new_rank_hash, "FILE", file_partner);
+          //scr_filemap_write(scr_map_file, map);
+        }
+
+        /* either sending or receiving a file this round, since we move files,
+         * it will be deleted or overwritten */
+        if (shuffile_swap_files(MOVE_FILES, file, NULL, send_rank,
+            file_partner, NULL, recv_rank, comm_world) != SHUFFILE_SUCCESS)
+        {
+          shuffile_err("Swapping files: %s to %d, %s from %d @ %s:%d",
+                  file, send_rank, file_partner, recv_rank, __FILE__, __LINE__
+          );
+          rc = SHUFFILE_FAILURE;
+        }
+
+        /* if we received a file, record its meta data and decrement
+         * our receive count */
+        if (have_incoming) {
+          /* decrement receive count */
+          recv_num--;
+          if (recv_num == 0) {
+            have_incoming = 0;
+            recv_rank = MPI_PROC_NULL;
+          }
+        }
+
+        /* if we sent a file, remove it from the filemap and decrement
+         * our send count */
+        if (have_outgoing) {
+          /* decrement our send count */
+          send_num--;
+          if (send_num == 0) {
+            have_outgoing = 0;
+            send_rank = MPI_PROC_NULL;
+          }
+        }
+      }
+
+      /* free our file list */
+      shuffile_free(&files);
+    }
+  }
+
+  /* if we have more rounds than max rounds, delete the remainder of our files */
+  for (round = max_rounds+1; round < nranks; round++) {
+    /* have someone's files for this round, so delete them */
+    int dst_rank = have_rank_by_round[round];
+    shuffile_unlink(hash, dst_rank);
+  }
+
+  shuffile_free(&send_flag_by_round);
+  shuffile_free(&have_rank_by_round);
+
+  /* write out new filemap and free the memory resources */
+  kvtree_write_file(name, new_hash);
+
+  /* free our hash objects */
+  kvtree_delete(&hash);
+  kvtree_delete(&new_hash);
+
+  /* return whether distribute succeeded, it does not ensure we have
+   * all of our files, only that the transfer completed without failure */
+  return rc;
+}

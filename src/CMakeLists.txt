@@ -1,0 +1,36 @@
+# Header files need not be enumerated
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR})
+
+###########
+# LIB ER #
+###########
+
+# Install header files
+LIST(APPEND libshuffile_install_headers
+	shuffile.h
+)
+INSTALL(FILES ${libshuffile_install_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+LIST(APPEND libshuffile_srcs
+    shuffile_util.c
+    shuffile_io.c
+    shuffile.c
+)
+
+# KVTREE Library
+ADD_LIBRARY(shuffile_o OBJECT ${libshuffile_srcs})
+
+ADD_LIBRARY(shuffile SHARED $<TARGET_OBJECTS:shuffile_o>)
+TARGET_LINK_LIBRARIES(shuffile ${KVTREE_EXTERNAL_LIBS})
+SET_TARGET_PROPERTIES(shuffile PROPERTIES OUTPUT_NAME shuffile CLEAN_DIRECT_OUTPUT 1)
+INSTALL(TARGETS shuffile DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+ADD_LIBRARY(shuffile-static STATIC $<TARGET_OBJECTS:shuffile_o>)
+IF(KVTREE_LINK_STATIC)
+        SET_TARGET_PROPERTIES(shuffile-static PROPERTIES LINK_SEARCH_START_STATIC 1)
+        SET_TARGET_PROPERTIES(shuffile-static PROPERTIES LINK_SEARCH_END_STATIC 1)
+ENDIF(KVTREE_LINK_STATIC)
+TARGET_LINK_LIBRARIES(shuffile-static ${KVTREE_EXTERNAL_LIBS})
+
+SET_TARGET_PROPERTIES(shuffile-static PROPERTIES OUTPUT_NAME shuffile CLEAN_DIRECT_OUTPUT 1)
+INSTALL(TARGETS shuffile-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
