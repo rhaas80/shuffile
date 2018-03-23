@@ -77,13 +77,171 @@ static int shuffile_unlink(kvtree* hash, int rank)
   return 0;
 }
 
+/* gather list data to rank 0 in storage communicator,
+ * and write data to the specified file name */
+static void shuffile_write_file(
+  MPI_Comm comm_storage,
+  const char* name,
+  const kvtree* list)
+{
+  /* make a copy of the input data */
+  kvtree* list_copy = kvtree_new();
+  kvtree_merge(list_copy, list);
+
+  /* send data to root process for our storage group */
+  kvtree* send_hash = kvtree_new();
+  kvtree* recv_hash = kvtree_new();
+
+  /* send our data to rank 0 of our storage group */
+  kvtree_setf(send_hash, list_copy, "%d", 0);
+  kvtree_exchange(send_hash, recv_hash, comm_storage);
+
+  /* have rank 0 on in the storage group write the file */
+  int rank_storage;
+  MPI_Comm_rank(comm_storage, &rank_storage);
+  if (rank_storage == 0) {
+    /* create object to hold data from receive hash */
+    kvtree* filedata = kvtree_new();
+
+    /* merge data from each rank into our list */
+    kvtree_elem* elem;
+    for (elem = kvtree_elem_first(recv_hash);
+         elem != NULL;
+         elem = kvtree_elem_next(elem))
+    {
+      kvtree* elem_hash = kvtree_elem_hash(elem);
+      kvtree_merge(filedata, elem_hash);
+    }
+
+    /* store list to shuffle file */
+    kvtree_write_file(name, filedata);
+
+    /* release temporary object */
+    kvtree_delete(&filedata);
+  }
+
+  /* release send and receive hashes */
+  kvtree_delete(&recv_hash);
+  kvtree_delete(&send_hash);
+
+  /* no need to free list_copy, as it was attached to send_hash */
+  return;
+}
+
+/* scatter items in file to processes in storage communicator,
+ * if owning process is in the communicator, it ends up with
+ * its own data, otherwise data is evenly spread among processes */
+static void shuffile_read_file(
+  MPI_Comm comm,
+  MPI_Comm comm_storage,
+  const char* name,
+  kvtree* list)
+{
+  /* get process name */
+  int rank_world;
+  MPI_Comm_rank(comm, &rank_world);
+
+  /* get size of our storage group */
+  int ranks_storage;
+  MPI_Comm_size(comm_storage, &ranks_storage);
+
+  /* this will map ranks in storage comm to global process name */
+  kvtree* map_hash = kvtree_new();
+
+  /* send a message to rank 0 to tell it our global name */
+  kvtree* send_hash = kvtree_new();
+  kvtree_setf(send_hash, NULL, "%d %d", 0, rank_world);
+  kvtree_exchange(send_hash, map_hash, comm_storage);
+
+  /* reuse our send hash */
+  kvtree_delete(&send_hash);
+  send_hash = kvtree_new();
+
+  /* have rank 0 on in the storage group read the file */
+  int rank_storage;
+  MPI_Comm_rank(comm_storage, &rank_storage);
+  if (rank_storage == 0) {
+    /* read data from shuffile file */
+    kvtree* filedata = kvtree_new();
+    kvtree_read_file(name, filedata);
+
+    int target_rank = 0;
+    kvtree* ranks_hash = kvtree_get(filedata, "RANK");
+    kvtree_elem* elem;
+    for (elem = kvtree_elem_first(ranks_hash);
+         elem != NULL;
+         elem = kvtree_elem_next(elem))
+    {
+      /* get the process name */
+      const char* name = kvtree_elem_key(elem);
+
+      /* get data for this process */
+      kvtree* data = kvtree_elem_hash(elem);
+
+      /* copy data for outgoing send */
+      kvtree* tmp = kvtree_new();
+      kvtree* tmp_data = kvtree_set_kv(tmp, "RANK", name);
+      kvtree_merge(tmp_data, data);
+
+      /* if this process is in our storage group,
+       * send its data to it */
+      int i;
+      int local_rank = -1;
+      for (i = 0; i < ranks_storage; i++) {
+        if (kvtree_getf(map_hash, "%d %s", i, name) != NULL) {
+          /* found it, proc with with name is our local ith process */
+          local_rank = i;
+          break;
+        }
+      }
+
+      /* pick a rank to send this to */
+      if (local_rank == -1) {
+        /* round robin to next task */
+        local_rank = target_rank;
+        target_rank = (target_rank + 1) % ranks_storage;
+      }
+
+      /* append data heading to this rank */
+      kvtree* local_data = kvtree_getf(send_hash, "%d", local_rank);
+      if (local_data == NULL) {
+        kvtree_setf(send_hash, tmp, "%d", local_rank);
+      } else {
+        kvtree_merge(local_data, tmp);
+        kvtree_delete(&tmp);
+      }
+    }
+
+    /* free data read from file */
+    kvtree_delete(&filedata);
+  }
+
+  /* send data to processes in the storage group */
+  kvtree* recv_hash = kvtree_new();
+  kvtree_exchange(send_hash, recv_hash, comm_storage);
+
+  /* get pointer to any data that we got from rank 0,
+   * and copy to our outupt hash */
+  kvtree* data = kvtree_get(recv_hash, "0");
+  kvtree_merge(list, data);
+
+  kvtree_delete(&recv_hash);
+  kvtree_delete(&map_hash);
+  kvtree_delete(&send_hash);
+
+  /* no need to free list_copy, as it was attached to send_hash */
+  return;
+}
+
 /* associate a set of files with a named process */
 int shuffile_create(
+  MPI_Comm comm,
+  MPI_Comm comm_storage,
   int numfiles,
   const char** files,
   const char* name)
 {
-  MPI_Comm comm_world = shuffile_comm;
+  MPI_Comm comm_world = comm;
 
   /* get name of process */
   int rank_world;
@@ -105,8 +263,8 @@ int shuffile_create(
     kvtree_set_kv(rank_hash, "FILE", file);
   }
 
-  /* store list to shuffle file */
-  kvtree_write_file(name, list);
+  /* write data to file */
+  shuffile_write_file(comm_storage, name, list);
 
   /* free the list */
   kvtree_delete(&list);
@@ -116,21 +274,32 @@ int shuffile_create(
 
 /* drop association information,
  * which is useful when cleaning up */
-int shuffile_remove(const char* name)
+int shuffile_remove(
+  MPI_Comm comm,
+  MPI_Comm comm_storage,
+  const char* name)
 {
-  shuffile_file_unlink(name);
+  /* have rank 0 on in the storage group delete the file */
+  int rank_storage;
+  MPI_Comm_rank(comm_storage, &rank_storage);
+  if (rank_storage == 0) {
+    shuffile_file_unlink(name);
+  }
   return SHUFFILE_SUCCESS;
 }
 
 /* migrate files to owner process, if necessary */
-int shuffile_dance(const char* name)
+int shuffile_migrate(
+  MPI_Comm comm,
+  MPI_Comm comm_storage,
+  const char* name)
 {
   int i, round;
   int rc = SHUFFILE_SUCCESS;
 
   /* get name of this process */
   int rank_world;
-  MPI_Comm comm_world = shuffile_comm;
+  MPI_Comm comm_world = comm;
   MPI_Comm_rank(comm_world, &rank_world);
 
   /* allocate an object to record new shuffle file info */
@@ -139,14 +308,14 @@ int shuffile_dance(const char* name)
 
   /* read data from shuffile file */
   kvtree* hash = kvtree_new();
-  kvtree_read_file(name, hash);
+  shuffile_read_file(comm, comm_storage, name, hash);
 
   /* TODO: support arbitrary process names */
 
   /* get pointer to ranks hash */
   kvtree* ranks_hash = kvtree_get(hash, "RANK");
 
-  /* for this dataset, get list of ranks we have data for */
+  /* get list of ranks we have data for */
   int  nranks = 0;
   int* ranks = NULL;
   //kvtree_sort_int(ranks_hash, KVTREE_SORT_ASCENDING);
@@ -227,9 +396,7 @@ int shuffile_dance(const char* name)
 
   /* get the maximum retrieve round */
   int max_rounds = 0;
-  MPI_Allreduce(
-    &retrieve_round, &max_rounds, 1, MPI_INT, MPI_MAX, comm_world
-  );
+  MPI_Allreduce(&retrieve_round, &max_rounds, 1, MPI_INT, MPI_MAX, comm_world);
 
   /* tell destination which round we'll take our files in */
   send_hash = kvtree_new();
@@ -280,6 +447,12 @@ int shuffile_dance(const char* name)
         send_rank = dst_rank;
         kvtree* rank_hash = kvtree_get_kv_int(hash, "RANK", dst_rank);
         kvtree_util_get_int(rank_hash, "FILES", &send_num);
+
+        /* don't bother transferring files to ourself */
+        if (send_rank == rank_world) {
+          kvtree_merge(new_rank_hash, rank_hash);
+          continue;
+        }
       }
     }
 
@@ -442,7 +615,7 @@ int shuffile_dance(const char* name)
   shuffile_free(&have_rank_by_round);
 
   /* write out new filemap and free the memory resources */
-  kvtree_write_file(name, new_hash);
+  shuffile_write_file(comm_storage, name, new_hash);
 
   /* free our hash objects */
   kvtree_delete(&hash);

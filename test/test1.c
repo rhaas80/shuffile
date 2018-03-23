@@ -25,7 +25,7 @@ int main (int argc, char* argv[])
   sprintf(buf, "data from rank %d\n", rank);
 
   char filename[256];
-  sprintf(filename, "./testfile_%d.out", rank);
+  sprintf(filename, "/tmp/moody20/testfile_%d.out", rank);
   int fd = open(filename, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
   if (fd != -1) {
     write(fd, buf, strlen(buf));
@@ -38,14 +38,36 @@ int main (int argc, char* argv[])
 
   shuffile_init();
 
+  MPI_Comm comm_world = MPI_COMM_WORLD;
+  MPI_Comm comm_store = MPI_COMM_WORLD;
+
   /* associate files in filelist with calling process */
-  shuffile_create(1, filelist, "/tmp/shuffle");
+  shuffile_create(comm_world, comm_store, 1, filelist, "/tmp/moody20/shuffle");
 
   /* migrate files back to owner process */
-  shuffile_dance("/tmp/shuffle");
+  shuffile_migrate(comm_world, comm_store, "/tmp/moody20/shuffle");
 
   /* delete association information */
-  //shuffile_remove("/tmp/shuffle");
+  shuffile_remove(comm_world, comm_store, "/tmp/moody20/shuffle");
+
+  /* assume running two procs per node in block distribution */
+  MPI_Comm_split(comm_world, rank / 2, 0, &comm_store);
+
+  /* reverse ranks in comm world */
+  MPI_Comm comm_restart;
+  MPI_Comm_split(comm_world, 0, ranks - rank, &comm_restart);
+
+  /* associate files in filelist with calling process */
+  shuffile_create(comm_world, comm_store, 1, filelist, "/tmp/moody20/shuffle");
+
+  /* migrate files back to owner process */
+  shuffile_migrate(comm_restart, comm_store, "/tmp/moody20/shuffle");
+
+  /* delete association information */
+  shuffile_remove(comm_world, comm_store, "/tmp/moody20/shuffle");
+
+  MPI_Comm_free(&comm_store);
+  MPI_Comm_free(&comm_restart);
 
   shuffile_finalize();
 

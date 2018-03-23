@@ -45,22 +45,29 @@ int shuffile_init();
 /* shutdown library */
 int shuffile_finalize();
 
-/* associate a set of files with the calling process */
+/* associate a set of files with the calling process,
+ * name of process is taken as rank in comm */
 int shuffile_create(
-  int numfiles,       /* number of files */
-  const char** files, /* array of file names */
-  const char* name    /* path name to store association information */
+  MPI_Comm comm,       /* group of processes participating in shuffle */
+  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
+  int numfiles,        /* number of files */
+  const char** files,  /* array of file names */
+  const char* name     /* path name to file to store shuffle information */
 );
 
 /* migrate files to owner process, if necessary */
-int shuffile_dance(
-  const char* name /* path name containing association information */
+int shuffile_migrate(
+  MPI_Comm comm,       /* group of processes participating in shuffle */
+  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
+  const char* name     /* path name to file containing shuffle info */
 );
 
 /* drop association information,
  * which is useful when cleaning up */
 int shuffile_remove(
-  const char* name
+  MPI_Comm comm,       /* group of processes participating in shuffle */
+  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
+  const char* name     /* path name to file containing shuffle info */
 );
 
 #endif /* SHUFFILE_H */

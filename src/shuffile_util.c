@@ -266,10 +266,12 @@ int shuffile_swap_file_names(
   if (have_incoming) {
     /* set path to file name */
     char* file_recv_orig_copy = strdup(file_recv_orig);
-    char* name = basename(file_recv_orig);
-    snprintf(file_recv, size_recv, "%s/%s", dir_recv, name);
+    //char* name = basename(file_recv_orig);
+    //snprintf(file_recv, size_recv, "%s/%s", dir_recv, name);
+    snprintf(file_recv, size_recv, "%s", file_recv_orig);
 
     /* free the file name we received */
+    shuffile_free(&file_recv_orig_copy);
     shuffile_free(&file_recv_orig);
   }
 
