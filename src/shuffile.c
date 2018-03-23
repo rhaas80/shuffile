@@ -288,6 +288,47 @@ int shuffile_remove(
   return SHUFFILE_SUCCESS;
 }
 
+static int shuffile_have_files(const kvtree* hash, int rank)
+{
+  /* failed to find rank in hash */
+  kvtree* rank_hash = kvtree_get_kv_int(hash, "RANK", rank);
+  if (rank_hash == NULL) {
+    return 0;
+  }
+
+  /* get number of files */
+  int num_files;
+  if (kvtree_util_get_int(rank_hash, "FILES", &num_files) != KVTREE_SUCCESS) {
+    /* failed to read number of files */
+    return 0;
+  }
+
+  /* check that we can read file */
+  int found_files = 0;
+  kvtree* files_hash = kvtree_get(rank_hash, "FILE");
+  kvtree_elem* elem;
+  for (elem = kvtree_elem_first(files_hash);
+       elem != NULL;
+       elem = kvtree_elem_next(elem))
+  {
+    /* get file name */
+    const char* name = kvtree_elem_key(elem);
+
+    /* check that file exists */
+    if (shuffile_file_is_readable(name) == SHUFFILE_SUCCESS) {
+      found_files++;
+    }
+  }
+
+  if (found_files != num_files) {
+    /* number of readable files not the same as expected number */
+    return 0;
+  }
+
+  /* seem to have all of our files */
+  return 1;
+}
+
 /* migrate files to owner process, if necessary */
 int shuffile_migrate(
   MPI_Comm comm,
@@ -357,9 +398,9 @@ int shuffile_migrate(
 
     /* if we have files for this rank, specify the round we can
      * send those files in */
-    //if (kvtree_have_files(map, id, rank)) {
+    if (shuffile_have_files(hash, rank)) {
       kvtree_setf(send_hash, NULL, "%d %d", rank, round);
-    //}
+    }
   }
   kvtree_exchange(send_hash, recv_hash, comm_world);
 
