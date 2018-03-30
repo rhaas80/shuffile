@@ -38,12 +38,8 @@ int shuffile_init()
   /* set MPI buffer size */
   shuffile_mpi_buf_size = 1024 * 1024;
 
-  /* TODO: allow other process groups */
-  /* duplicate MPI_COMM_WORLD */
-  MPI_Comm_dup(MPI_COMM_WORLD, &shuffile_comm);
-
   /* set our global rank */
-  MPI_Comm_rank(shuffile_comm, &shuffile_rank);
+  MPI_Comm_rank(MPI_COMM_WORLD, &shuffile_rank);
 
   return SHUFFILE_SUCCESS;
 }
@@ -51,7 +47,6 @@ int shuffile_init()
 int shuffile_finalize()
 {
   shuffile_free(&shuffile_hostname);
-  MPI_Comm_free(&shuffile_comm);
   return SHUFFILE_SUCCESS;
 }
 
