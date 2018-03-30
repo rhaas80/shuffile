@@ -46,28 +46,31 @@ int shuffile_init();
 int shuffile_finalize();
 
 /* associate a set of files with the calling process,
- * name of process is taken as rank in comm */
+ * name of process is taken as rank in comm,
+ * collective across processes in comm */
 int shuffile_create(
-  MPI_Comm comm,       /* group of processes participating in shuffle */
-  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
-  int numfiles,        /* number of files */
-  const char** files,  /* array of file names */
-  const char* name     /* path name to file to store shuffle information */
+  MPI_Comm comm,       /* IN - group of processes participating in shuffle */
+  MPI_Comm comm_store, /* IN - group of processes sharing a shuffle file, subgroup of comm */
+  int numfiles,        /* IN - number of files */
+  const char** files,  /* IN - array of file names */
+  const char* name     /* IN - path name to file to store shuffle information */
 );
 
-/* migrate files to owner process, if necessary */
+/* migrate files to owner process, if necessary,
+ * collective across processes in comm */
 int shuffile_migrate(
-  MPI_Comm comm,       /* group of processes participating in shuffle */
-  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
-  const char* name     /* path name to file containing shuffle info */
+  MPI_Comm comm,       /* IN - group of processes participating in shuffle */
+  MPI_Comm comm_store, /* IN - group of processes sharing a shuffle file, subgroup of comm */
+  const char* name     /* IN - path name to file containing shuffle info */
 );
 
 /* drop association information,
- * which is useful when cleaning up */
+ * which is useful when cleaning up,
+ * collective across processes in comm */
 int shuffile_remove(
-  MPI_Comm comm,       /* group of processes participating in shuffle */
-  MPI_Comm comm_store, /* group of processes sharing a shuffle file */
-  const char* name     /* path name to file containing shuffle info */
+  MPI_Comm comm,       /* IN - group of processes participating in shuffle */
+  MPI_Comm comm_store, /* IN - group of processes sharing a shuffle file, subgroup of comm */
+  const char* name     /* IN - path name to file containing shuffle info */
 );
 
 #endif /* SHUFFILE_H */
