@@ -50,6 +50,12 @@ int shuffile_str_sendrecv(
   MPI_Comm comm
 );
 
+int shuffile_swap_file_names(
+  const char* file_send, int rank_send,
+        char* file_recv, size_t size_recv, int rank_recv,
+  const char* dir_recv, MPI_Comm comm
+);
+
 /* returns true (non-zero) if flag on each process in comm is true */
 int shuffile_alltrue(int flag, MPI_Comm comm);
 

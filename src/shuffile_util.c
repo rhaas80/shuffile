@@ -20,8 +20,11 @@
 
 #include "mpi.h"
 #include "kvtree.h"
+#include "kvtree_util.h"
+#include "kvtree_mpi.h"
 
 #include "shuffile_util.h"
+#include "shuffile_io.h"
 
 #define SHUFFILE_VERSION "1.0"
 

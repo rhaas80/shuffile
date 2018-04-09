@@ -20,6 +20,7 @@
 
 #include "kvtree.h"
 #include "kvtree_util.h"
+#include "kvtree_mpi.h"
 
 #include "shuffile_util.h"
 #include "shuffile_io.h"
@@ -462,8 +463,6 @@ int shuffile_migrate(
   /* done with the round hashes, free them off */
   kvtree_delete(&recv_hash);
   kvtree_delete(&send_hash);
-
-  int tmp_rc = 0;
 
   /* run through rounds and exchange files */
   for (round = 0; round <= max_rounds; round++) {
