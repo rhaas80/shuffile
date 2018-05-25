@@ -15,7 +15,7 @@ To build KVTree:
 
     mkdir build
     mkdir install
-    
+
     cd build
     cmake -DCMAKE_INSTALL_PREFIX=../install -DMPI=ON ../KVTree.git
     make clean
@@ -40,6 +40,6 @@ Produced at the Lawrence Livermore National Laboratory.
 Copyright (c) 2018, UChicago Argonne LLC, operator of Argonne National Laboratory.
 
 
-For release details and restrictions, please read the [LICENSE](https://github.com/LLNL/AXL/blob/master/LICENSE) and [NOTICE](https://github.com/LLNL/AXL/blob/master/NOTICE) files.
+For release details and restrictions, please read the [LICENSE]() and [NOTICE]() files.
 
 `LLNL-CODE-751725` `OCEC-18-060`
