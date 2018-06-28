@@ -25,6 +25,11 @@
 #include "mpi.h"
 #include "kvtree.h"
 
+/* enable C++ codes to include this header directly */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SHUFFILE_SUCCESS (0)
 #define SHUFFILE_FAILURE (1)
 
@@ -61,5 +66,10 @@ int shuffile_remove(
   MPI_Comm comm_store, /* IN - group of processes sharing a shuffle file, subgroup of comm */
   const char* name     /* IN - path name to file containing shuffle info */
 );
+
+/* enable C++ codes to include this header directly */
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* SHUFFILE_H */
