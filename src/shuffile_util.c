@@ -545,7 +545,11 @@ static int shuffile_swap_files_move(
   if (have_outgoing && have_incoming) {
     /* sent and received a file; close it, truncate it to corect size, rename it */
     shuffile_close(file_send, fd);
-    truncate(file_send, write_pos);
+    if (truncate(file_send, write_pos) == -1) {
+      shuffile_err("Failed to truncate file: truncate(%s, %llu) errno=%d %s @ %s:%d",
+              file_recv, (unsigned long long)write_pos, errno, strerror(errno), __FILE__, __LINE__
+      );
+    }
     rename(file_send, file_recv);
   } else if (have_outgoing) {
     /* only sent a file; close it, delete it, and remove its completion marker */
