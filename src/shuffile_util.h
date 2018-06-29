@@ -8,7 +8,6 @@
 #define SHUFFILE_FAILURE (1)
 
 #define SHUFFILE_MAX_FILENAME (1024)
-#define HOST_NAME_MAX (1024)
 
 extern int shuffile_rank;
 extern char* shuffile_hostname;

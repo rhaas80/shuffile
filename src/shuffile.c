@@ -15,10 +15,12 @@
 #include "shuffile_io.h"
 #include "shuffile.h"
 
+#define SHUFFILE_HOSTNAME (255)
+
 int shuffile_init()
 {
   /* read our hostname */
-  char hostname[HOST_NAME_MAX + 1];
+  char hostname[SHUFFILE_HOSTNAME + 1];
   gethostname(hostname, sizeof(hostname));
   shuffile_hostname = strdup(hostname);
 
