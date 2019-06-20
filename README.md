@@ -1,4 +1,7 @@
 # Overview
+
+[![Build Status](https://api.travis-ci.org/ECP-VeloC/shuffile.png?branch=master)](https://travis-ci.org/ECP-VeloC/shuffile)
+
 This module lets one associate a set of files with a process name.
 Currently, the name is implied to be the rank within MPI_COMM_WORLD.
 In the event that a set of distributed processes are moved, for example
