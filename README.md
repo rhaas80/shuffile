@@ -8,7 +8,7 @@ In the event that a set of distributed processes are moved, for example
 when restarting an MPI job, functions will migrate files from their original
 locations to the new locations where the processes are running.
 
-Usage is documented in src/shuffile.h.
+Usage is documented in [src/shuffile.h]() and the [User API docs](https://ecp-veloc.github.io/component-user-docs/group__shuffile.html).
 
 # Building
 
