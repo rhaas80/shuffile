@@ -604,10 +604,14 @@ int shuffile_file_is_writeable(const char* file)
 int shuffile_file_unlink(const char* file)
 {
   if (unlink(file) != 0) {
-    shuffile_dbg(2, "Failed to delete file: %s errno=%d %s @ %s:%d",
-      file, errno, strerror(errno), __FILE__, __LINE__
-    );
-    return SHUFFILE_FAILURE;
+    /* hit an error deleting, but don't care if we failed
+     * because there is no file at that path */
+    if (errno != ENOENT) {
+      shuffile_dbg(2, "Failed to delete file: %s errno=%d %s @ %s:%d",
+        file, errno, strerror(errno), __FILE__, __LINE__
+      );
+      return SHUFFILE_FAILURE;
+    }
   }
   return SHUFFILE_SUCCESS;
 }
