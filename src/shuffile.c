@@ -1,6 +1,22 @@
+/* to get nsec fields in stat structure */
+#define _GNU_SOURCE
+
+/* TODO: ugly hack until we get a configure test */
+// HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1
+// HAVE_STRUCT_STAT_ST_MTIME_N
+// HAVE_STRUCT_STAT_ST_UMTIME
+// HAVE_STRUCT_STAT_ST_MTIME_USEC
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <errno.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <limits.h>
 #include <unistd.h>
@@ -273,6 +289,190 @@ int shuffile_remove(
     shuffile_file_unlink(name);
   }
   return SHUFFILE_SUCCESS;
+}
+
+static void shuffile_stat_get_atimes(const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_atime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_atimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_atim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_atime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_uatime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_atime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+static void shuffile_stat_get_mtimes (const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_mtime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_mtimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_mtim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_mtime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_umtime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_mtime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+static void shuffile_stat_get_ctimes (const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_ctime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_ctimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_ctim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_ctime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_uctime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_ctime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+static int shuffile_meta_encode(const char* file, kvtree* meta)
+{
+  struct stat statbuf;
+  int rc = shuffile_stat(file, &statbuf);
+  if (rc == 0) {
+    kvtree_util_set_unsigned_long(meta, "MODE", (unsigned long) statbuf.st_mode);
+    kvtree_util_set_unsigned_long(meta, "UID",  (unsigned long) statbuf.st_uid);
+    kvtree_util_set_unsigned_long(meta, "GID",  (unsigned long) statbuf.st_gid);
+    kvtree_util_set_unsigned_long(meta, "SIZE", (unsigned long) statbuf.st_size);
+
+    uint64_t secs, nsecs;
+    shuffile_stat_get_atimes(&statbuf, &secs, &nsecs);
+    kvtree_util_set_unsigned_long(meta, "ATIME_SECS",  (unsigned long) secs);
+    kvtree_util_set_unsigned_long(meta, "ATIME_NSECS", (unsigned long) nsecs);
+
+    shuffile_stat_get_ctimes(&statbuf, &secs, &nsecs);
+    kvtree_util_set_unsigned_long(meta, "CTIME_SECS",  (unsigned long) secs);
+    kvtree_util_set_unsigned_long(meta, "CTIME_NSECS", (unsigned long) nsecs);
+
+    shuffile_stat_get_mtimes(&statbuf, &secs, &nsecs);
+    kvtree_util_set_unsigned_long(meta, "MTIME_SECS",  (unsigned long) secs);
+    kvtree_util_set_unsigned_long(meta, "MTIME_NSECS", (unsigned long) nsecs);
+
+    return SHUFFILE_SUCCESS;
+  }
+  return SHUFFILE_FAILURE;
+}
+
+static int shuffile_meta_apply(const char* file, const kvtree* meta)
+{
+  int rc = SHUFFILE_SUCCESS;
+
+  /* set permission bits on file */
+  unsigned long mode_val;
+  if (kvtree_util_get_unsigned_long(meta, "MODE", &mode_val) == KVTREE_SUCCESS) {
+    mode_t mode = (mode_t) mode_val;
+
+    /* TODO: mask some bits here */
+
+    int chmod_rc = chmod(file, mode);
+    if (chmod_rc != 0) {
+      /* failed to set permissions */
+      shuffile_err("chmod(%s) failed: errno=%d %s @ %s:%d",
+        file, errno, strerror(errno), __FILE__, __LINE__
+      );
+      rc = SHUFFILE_FAILURE;
+    }
+  }
+
+  /* set uid and gid on file */
+  unsigned long uid_val = -1;
+  unsigned long gid_val = -1;
+  kvtree_util_get_unsigned_long(meta, "UID", &uid_val);
+  kvtree_util_get_unsigned_long(meta, "GID", &gid_val);
+  if (uid_val != -1 || gid_val != -1) {
+    /* got a uid or gid value, try to set them */
+    int chown_rc = chown(file, (uid_t) uid_val, (gid_t) gid_val);
+    if (chown_rc != 0) {
+      /* failed to set uid and gid */
+      shuffile_err("chown(%s, %lu, %lu) failed: errno=%d %s @ %s:%d",
+        file, uid_val, gid_val, errno, strerror(errno), __FILE__, __LINE__
+      );
+      rc = SHUFFILE_FAILURE;
+    }
+  }
+
+  /* can't set the size at this point, but we can check it */
+  unsigned long size;
+  if (kvtree_util_get_unsigned_long(meta, "SIZE", &size) == KVTREE_SUCCESS) {
+    /* got a size field in the metadata, stat the file */
+    struct stat statbuf;
+    int stat_rc = shuffile_stat(file, &statbuf);
+    if (stat_rc == 0) {
+      /* stat succeeded, check that sizes match */
+      if (size != statbuf.st_size) {
+        /* file size is not correct */
+        shuffile_err("file `%s' size is %lu expected %lu @ %s:%d",
+          file, (unsigned long) statbuf.st_size, size, __FILE__, __LINE__
+        );
+        rc = SHUFFILE_FAILURE;
+      }
+    } else {
+      /* failed to stat file */
+      shuffile_err("stat(%s) failed: errno=%d %s @ %s:%d",
+        file, errno, strerror(errno), __FILE__, __LINE__
+      );
+      rc = SHUFFILE_FAILURE;
+    }
+  }
+
+  /* set timestamps on file as last step */
+  unsigned long atime_secs  = 0;
+  unsigned long atime_nsecs = 0;
+  kvtree_util_get_unsigned_long(meta, "ATIME_SECS",  &atime_secs);
+  kvtree_util_get_unsigned_long(meta, "ATIME_NSECS", &atime_nsecs);
+
+  unsigned long mtime_secs  = 0;
+  unsigned long mtime_nsecs = 0;
+  kvtree_util_get_unsigned_long(meta, "MTIME_SECS",  &mtime_secs);
+  kvtree_util_get_unsigned_long(meta, "MTIME_NSECS", &mtime_nsecs);
+
+  if (atime_secs != 0 || atime_nsecs != 0 ||
+      mtime_secs != 0 || mtime_nsecs != 0)
+  {
+    /* fill in time structures */
+    struct timespec times[2];
+    times[0].tv_sec  = (time_t) atime_secs;
+    times[0].tv_nsec = (long)   atime_nsecs;
+    times[1].tv_sec  = (time_t) mtime_secs;
+    times[1].tv_nsec = (long)   mtime_nsecs;
+
+    /* set times with nanosecond precision using utimensat,
+     * assume path is relative to current working directory,
+     * if it's not absolute, and set times on link (not target file)
+     * if dest_path refers to a link */
+    int utime_rc = utimensat(AT_FDCWD, file, times, AT_SYMLINK_NOFOLLOW);
+    if (utime_rc != 0) {
+      shuffile_err("Failed to change timestamps on `%s' utimensat() errno=%d %s @ %s:%d",
+        file, errno, strerror(errno), __FILE__, __LINE__
+      );
+      rc = SHUFFILE_FAILURE;
+    }
+  }
+
+  return rc;
 }
 
 static int shuffile_have_files(const kvtree* hash, int rank)
@@ -570,10 +770,17 @@ int shuffile_migrate(
 
       /* while we have a file to send or receive ... */
       while (have_incoming || have_outgoing) {
+        /* create empty kvtrees used to exchange file metadata */
+        kvtree* send_meta = kvtree_new();
+        kvtree* recv_meta = kvtree_new();
+
         /* get the filename */
         const char* file = NULL;
         if (have_outgoing) {
           file = files[numfiles - send_num];
+
+          /* snapshot metadata for this file */
+          shuffile_meta_encode(file, send_meta);
         }
 
         /* exhange file names with partners,
@@ -593,8 +800,8 @@ int shuffile_migrate(
 
         /* either sending or receiving a file this round, since we move files,
          * it will be deleted or overwritten */
-        if (shuffile_swap_files(MOVE_FILES, file, NULL, send_rank,
-            file_partner, NULL, recv_rank, comm_world) != SHUFFILE_SUCCESS)
+        if (shuffile_swap_files(MOVE_FILES, file, send_meta, send_rank,
+            file_partner, recv_meta, recv_rank, comm_world) != SHUFFILE_SUCCESS)
         {
           shuffile_err("Swapping files: %s to %d, %s from %d @ %s:%d",
                   file, send_rank, file_partner, recv_rank, __FILE__, __LINE__
@@ -605,6 +812,9 @@ int shuffile_migrate(
         /* if we received a file, record its meta data and decrement
          * our receive count */
         if (have_incoming) {
+          /* apply metadata to received file */
+          shuffile_meta_apply(file_partner, recv_meta);
+
           /* decrement receive count */
           recv_num--;
           if (recv_num == 0) {
@@ -623,6 +833,10 @@ int shuffile_migrate(
             send_rank = MPI_PROC_NULL;
           }
         }
+
+        /* release metadata */
+        kvtree_delete(&recv_meta);
+        kvtree_delete(&send_meta);
       }
 
       /* free our file list */

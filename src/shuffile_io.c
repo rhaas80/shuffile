@@ -536,6 +536,18 @@ int shuffile_write_pad_n(int n, const char** files, int* fds,
   return SHUFFILE_SUCCESS;
 }
 
+/* given a filename, return stat info */
+int shuffile_stat(const char* file, struct stat* statbuf)
+{
+  int rc = stat(file, statbuf);
+  if (rc < 0) {
+    shuffile_err("Error stat'ing file %s: errno=%d %s @ %s:%d",
+      file, errno, strerror(errno), __FILE__, __LINE__
+    );
+  }
+  return rc;
+}
+
 /* given a filename, return number of bytes in file */
 unsigned long shuffile_file_size(const char* file)
 {
