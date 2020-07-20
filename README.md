@@ -24,16 +24,16 @@ To build KVTree:
     make clean
     make
     make install
-    make test
 
 To build shuffile:
 
     cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_KVTREE_PREFIX=`pwd`/install .
+    make
 
 # Testing
-Some simple test programs exist in the test directory.
+Some simple test programs exist in the test directory that are run by the `test` target.
 
-    mpicc -g -O0 -o test1 test1.c -I../install/include -L../install/lib64 -lkvtree -I../src -L../src -lshuffile
+    make test
 
 ## Release
 

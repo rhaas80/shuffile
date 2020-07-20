@@ -9,6 +9,7 @@
 
 #define SHUFFILE_MAX_FILENAME (1024)
 
+extern int shuffile_debug;
 extern int shuffile_rank;
 extern char* shuffile_hostname;
 

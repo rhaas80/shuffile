@@ -11,6 +11,7 @@
 // HAVE_STRUCT_STAT_ST_UMTIME
 // HAVE_STRUCT_STAT_ST_MTIME_USEC
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -59,6 +60,111 @@ int shuffile_finalize()
 {
   shuffile_free(&shuffile_hostname);
   return SHUFFILE_SUCCESS;
+}
+
+/* set configuration options */
+static kvtree* shuffile_config_set(const kvtree* config)
+{
+  kvtree* retval = (kvtree*)config;
+  assert(retval != NULL);
+
+  static const char* known_options[] = {
+    SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+    SHUFFILE_KEY_CONFIG_DEBUG,
+    NULL
+  };
+
+  /* read out all options we know about */
+  /* TODO: this could be turned into a list of structs */
+  unsigned long ul;
+  if (kvtree_util_get_bytecount(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+                                &ul) == KVTREE_SUCCESS)
+  {
+    shuffile_mpi_buf_size = (int) ul;
+    if (shuffile_mpi_buf_size != ul) {
+      char *value;
+      kvtree_util_get_str(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE, &value);
+      shuffile_err("Value '%s' passed for %s exceeds int range @ %s:%d",
+        value, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE, __FILE__, __LINE__
+      );
+      retval = NULL;
+    }
+  }
+
+  kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_DEBUG, &shuffile_debug);
+
+  /* report all unknown options (typos?) */
+  const kvtree_elem* elem;
+  for (elem = kvtree_elem_first(config);
+       elem != NULL;
+       elem = kvtree_elem_next(elem))
+  {
+    /* must be only one level deep, ie plain kev = value */
+    const kvtree* elem_hash = kvtree_elem_hash(elem);
+    assert(kvtree_size(elem_hash) == 1);
+
+    const kvtree* kvtree_first_elem_hash =
+      kvtree_elem_hash(kvtree_elem_first(elem_hash));
+    assert(kvtree_size(kvtree_first_elem_hash) == 0);
+
+    /* check against known options */
+    const char** opt;
+    int found = 0;
+    for (opt = known_options; *opt != NULL; opt++) {
+      if (strcmp(*opt, kvtree_elem_key(elem)) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (! found) {
+      shuffile_err("Unknown configuration parameter '%s' with value '%s' @ %s:%d",
+        kvtree_elem_key(elem),
+        kvtree_elem_key(kvtree_elem_first(kvtree_elem_hash(elem))),
+        __FILE__, __LINE__
+      );
+      retval = NULL;
+    }
+  }
+
+  return retval;
+}
+
+/* get configuration options */
+static kvtree* shuffile_config_get(void)
+{
+  int success = 1;
+
+  kvtree* retval = kvtree_new();
+  assert(retval != NULL);
+
+  if (kvtree_util_set_int(retval, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+    shuffile_mpi_buf_size) != KVTREE_SUCCESS)
+  {
+    success = 0;
+  }
+
+  if (kvtree_util_set_int(retval, SHUFFILE_KEY_CONFIG_DEBUG, shuffile_debug) !=
+    KVTREE_SUCCESS)
+  {
+    success = 0;
+  }
+
+  if (!success) {
+    kvtree_delete(&retval);
+  }
+
+  return retval;
+}
+
+/** Set a shuffile config parameters */
+kvtree* shuffile_config(const kvtree* config)
+{
+  if (config != NULL) {
+    return shuffile_config_set(config);
+  } else {
+    return shuffile_config_get();
+  }
+  return NULL; /* NOTREACHED */
 }
 
 /* delete each file for given process name, and remove entries from hash */
