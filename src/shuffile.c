@@ -11,6 +11,7 @@
 // HAVE_STRUCT_STAT_ST_UMTIME
 // HAVE_STRUCT_STAT_ST_MTIME_USEC
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -60,6 +61,79 @@ int shuffile_finalize()
   shuffile_free(&shuffile_hostname);
   return SHUFFILE_SUCCESS;
 }
+
+/** Set a shuffile config parameters */
+int shuffile_config(const kvtree* config)
+{
+  int retval = SHUFFILE_SUCCESS;
+
+  static int configured = 0;
+  static const char* known_options[] = {
+    SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+    NULL
+  };
+
+  if (!configured)
+  {
+    if (config != NULL)
+    {
+      const kvtree_elem* elem;
+
+      /* read out all options we know about */
+      /* TODO: this could be turned into a list of structs */
+      kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+                          &shuffile_mpi_buf_size);
+
+      /* report all unknown options (typos?) */
+      for (elem = kvtree_elem_first(config); elem ;
+           elem = kvtree_elem_next(elem))
+      {
+        /* must be only one level deep, ie plain kev = value */
+        {
+          const kvtree* elem_hash = kvtree_elem_hash(elem);
+          assert(kvtree_size(elem_hash) == 1);
+          {
+            const kvtree* kvtree_first_elem_hash =
+              kvtree_elem_hash(kvtree_elem_first(elem_hash));
+            assert(kvtree_size(kvtree_first_elem_hash) == 0);
+          }
+        }
+        /* check against known options */
+        {
+          const char** opt;
+          int found = 0;
+          for (opt = known_options; opt; opt++)
+          {
+            if (strcmp(*opt, kvtree_elem_key(elem)) == 0)
+            {
+              found = 1;
+              break;
+            }
+          }
+          if (!found)
+          {
+            fprintf(stderr,
+                    "Unknown configuration parameter '%s' with value '%s'\n",
+                    kvtree_elem_key(elem),
+                    kvtree_elem_key(kvtree_elem_first(kvtree_elem_hash(elem))));
+            retval = SHUFFILE_FAILURE;
+          }
+        }
+      }
+    }
+
+    /* only accept configuration options once */
+    configured = 1;
+  }
+  else
+  {
+    fprintf(stderr, "Already configured\n");
+    retval = SHUFFILE_FAILURE;
+  }
+
+  return retval;
+}
+
 
 /* delete each file for given process name, and remove entries from hash */
 static int shuffile_unlink(kvtree* hash, int rank)

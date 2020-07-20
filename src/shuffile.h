@@ -22,11 +22,18 @@ extern "C" {
 #define SHUFFILE_SUCCESS (0)
 #define SHUFFILE_FAILURE (1)
 
+#define SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE "MPI_BUF_SIZE"
+
 /** initialize library */
 int shuffile_init();
 
 /** shutdown library */
 int shuffile_finalize();
+
+/** set configuration options */
+int shuffile_config(
+  const kvtree* config        /** [IN] - kvtree of options */
+);
 
 /** associate a set of files with the calling process,
  * name of process is taken as rank in comm,
