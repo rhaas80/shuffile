@@ -79,11 +79,21 @@ int shuffile_config(const kvtree* config)
     if (config != NULL)
     {
       const kvtree_elem* elem;
+      unsigned long ul;
 
       /* read out all options we know about */
       /* TODO: this could be turned into a list of structs */
-      kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
-                          &shuffile_mpi_buf_size);
+      if (kvtree_util_get_bytecount(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+                                    &ul) == KVTREE_SUCCESS) {
+        shuffile_mpi_buf_size = (int) ul;
+        if (shuffile_mpi_buf_size != ul) {
+          char *value;
+          kvtree_util_get_str(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE, &value);
+          fprintf(stderr, "Value %s passed for %s exceeds int range\n",
+                  value, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE);
+          retval = SHUFFILE_FAILURE;
+        }
+      }
       kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_DEBUG, &shuffile_debug);
 
       /* report all unknown options (typos?) */
