@@ -70,6 +70,7 @@ int shuffile_config(const kvtree* config)
   static int configured = 0;
   static const char* known_options[] = {
     SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
+    SHUFFILE_KEY_CONFIG_DEBUG,
     NULL
   };
 
@@ -83,6 +84,7 @@ int shuffile_config(const kvtree* config)
       /* TODO: this could be turned into a list of structs */
       kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
                           &shuffile_mpi_buf_size);
+      kvtree_util_get_int(config, SHUFFILE_KEY_CONFIG_DEBUG, &shuffile_debug);
 
       /* report all unknown options (typos?) */
       for (elem = kvtree_elem_first(config); elem ;

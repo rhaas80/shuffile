@@ -23,6 +23,7 @@ extern "C" {
 #define SHUFFILE_FAILURE (1)
 
 #define SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE "MPI_BUF_SIZE"
+#define SHUFFILE_KEY_CONFIG_DEBUG "DEBUG"
 
 /** initialize library */
 int shuffile_init();
