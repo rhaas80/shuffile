@@ -2,7 +2,6 @@
 #define SHUFFILE_H
 
 #include "mpi.h"
-#include "kvtree.h"
 
 /** \defgroup shuffile Shuffile
  *  \brief Shuffle files between MPI ranks
@@ -32,6 +31,7 @@ int shuffile_init();
 int shuffile_finalize();
 
 /** set configuration options */
+typedef struct kvtree_struct kvtree;
 int shuffile_config(
   const kvtree* config        /** [IN] - kvtree of options */
 );
