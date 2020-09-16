@@ -37,17 +37,15 @@ main(int argc, char *argv[]) {
     }
 
     printf("Configuring shuffile...\n");
-    rc = shuffile_config(shuffile_config_values);
-    if (rc != SHUFFILE_SUCCESS) {
-        printf("shuffile_config() failed (error %d)\n", rc);
-        return rc;
+    if (shuffile_config(shuffile_config_values) == NULL) {
+        printf("shuffile_config() failed\n");
+        return EXIT_FAILURE;
     }
 
     printf("Configuring shuffile a second time (this should fail)...\n");
-    rc = shuffile_config(shuffile_config_values);
-    if (rc == SHUFFILE_SUCCESS) {
-        printf("shuffile_config() succeeded unexpectedly (error %d)\n", rc);
-        return rc;
+    if (shuffile_config(shuffile_config_values) != NULL) {
+        printf("shuffile_config() succeeded unexpectedly\n");
+        return EXIT_FAILURE;
     }
 
     if (shuffile_debug != !old_shuffile_debug) {
