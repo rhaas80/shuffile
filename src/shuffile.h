@@ -30,10 +30,21 @@ int shuffile_init();
 /** shutdown library */
 int shuffile_finalize();
 
-/** set configuration options */
+/**
+ * Get/set shuffile configuration values.
+ *
+ * config: The new configuration.  Global variables are in top level of
+ *         the tree, and per-ID values are subtrees.  If config=NULL,
+ *         then return a kvtree with all the configuration values (globals
+ *         and all per-ID trees).
+ *
+ * Return value: If config != NULL, then return config on success.  If
+ *               config=NULL (you're querying the config) then return
+ *               a new kvtree on success.  Return NULL on any failures.
+ */
 typedef struct kvtree_struct kvtree;
-int shuffile_config(
-  const kvtree* config        /** [IN] - kvtree of options */
+kvtree* shuffile_config(
+  const kvtree* config /** [IN] - kvtree of options */
 );
 
 /** associate a set of files with the calling process,

@@ -63,9 +63,9 @@ int shuffile_finalize()
 }
 
 /** Set a shuffile config parameters */
-int shuffile_config(const kvtree* config)
+kvtree* shuffile_config(const kvtree* config)
 {
-  int retval = SHUFFILE_SUCCESS;
+  kvtree* retval = (kvtree*)config;
 
   static int configured = 0;
   static const char* known_options[] = {
@@ -73,6 +73,11 @@ int shuffile_config(const kvtree* config)
     SHUFFILE_KEY_CONFIG_DEBUG,
     NULL
   };
+
+  /* TODO: implement getting configuration options back */
+  if (config == NULL) {
+    return NULL;
+  }
 
   if (! configured) {
     if (config != NULL) {
@@ -91,7 +96,7 @@ int shuffile_config(const kvtree* config)
           shuffile_err("Value '%s' passed for %s exceeds int range @ %s:%d",
             value, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE, __FILE__, __LINE__
           );
-          retval = SHUFFILE_FAILURE;
+          retval = NULL;
         }
       }
 
@@ -125,7 +130,7 @@ int shuffile_config(const kvtree* config)
             kvtree_elem_key(kvtree_elem_first(kvtree_elem_hash(elem))),
             __FILE__, __LINE__
           );
-          retval = SHUFFILE_FAILURE;
+          retval = NULL;
         }
       }
     }
@@ -134,7 +139,7 @@ int shuffile_config(const kvtree* config)
     configured = 1;
   } else {
     shuffile_err("Already configured @ %s:%d", __FILE__, __LINE__);
-    retval = SHUFFILE_FAILURE;
+    retval = NULL;
   }
 
   return retval;
