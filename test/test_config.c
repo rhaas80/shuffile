@@ -29,6 +29,25 @@ main(int argc, char *argv[]) {
         printf("kvtree_util_set_int failed (error %d)\n", rc);
         return rc;
     }
+
+    printf("Configuring shuffile (first set of options)...\n");
+    if (shuffile_config(shuffile_config_values) == NULL) {
+        printf("shuffile_config() failed\n");
+        return EXIT_FAILURE;
+    }
+
+    /* check options just set */
+
+    if (shuffile_debug != !old_shuffile_debug) {
+        printf("shuffile_config() failed to set %s: %d != %d\n",
+               SHUFFILE_KEY_CONFIG_DEBUG, shuffile_debug, !old_shuffile_debug);
+        return EXIT_FAILURE;
+    }
+
+    /* configure remainder of options */
+    kvtree_delete(&shuffile_config_values);
+    shuffile_config_values = kvtree_new();
+
     rc = kvtree_util_set_int(shuffile_config_values, SHUFFILE_KEY_CONFIG_MPI_BUF_SIZE,
                              old_shuffile_mpi_buf_size + 1);
     if (rc != KVTREE_SUCCESS) {
@@ -36,17 +55,13 @@ main(int argc, char *argv[]) {
         return rc;
     }
 
-    printf("Configuring shuffile...\n");
+    printf("Configuring shuffile (second set of options)...\n");
     if (shuffile_config(shuffile_config_values) == NULL) {
         printf("shuffile_config() failed\n");
         return EXIT_FAILURE;
     }
 
-    printf("Configuring shuffile a second time (this should fail)...\n");
-    if (shuffile_config(shuffile_config_values) != NULL) {
-        printf("shuffile_config() succeeded unexpectedly\n");
-        return EXIT_FAILURE;
-    }
+    /* check all options once more */
 
     if (shuffile_debug != !old_shuffile_debug) {
         printf("shuffile_config() failed to set %s: %d != %d\n",
