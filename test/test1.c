@@ -50,14 +50,16 @@ int main (int argc, char* argv[])
     char* cbuff = (char*)buff;
     cbuff[numBytes]  = '\0';
     if(numBytes != strlen(buf)){
+      printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
       printf("wrote %d bytes to file, but read %d bytes from file\n", strlen(buf), numBytes);
-      rc = TEST_FAIL;
+      return TEST_FAIL;
     }
     else{
       for(i = 0; i < numBytes; i++){
         if(buf[i] != cbuff[i]){
+          printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
           printf("%dth character writtten to file was %c, but %c was read from file\n",i, buf[i], cbuff[i]);
-          rc = TEST_FAIL;
+          return TEST_FAIL;
         }
       }
     }
@@ -66,8 +68,9 @@ int main (int argc, char* argv[])
     printf("data = %s, rank=%d\n", buf,rank);
     close(fdr);
   } else {
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
     printf("Error opening read file %s: %d %s\n", filename, errno, strerror(errno));
-    rc = TEST_FAIL;
+    return TEST_FAIL;
   }
 
   const char* filelist[1] = { filename };
@@ -111,14 +114,16 @@ int main (int argc, char* argv[])
     char* cbuff = (char*)buff;
     cbuff[numBytes]  = '\0';
     if(numBytes != strlen(buf)){
+      printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
       printf("wrote %d bytes to file, but read %d bytes from file\n", strlen(buf), numBytes);
-      rc = TEST_FAIL;
+      return TEST_FAIL;
     }
     else{
       for(i = 0; i < numBytes; i++){
         if(buf[i] != cbuff[i]){
+          printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
           printf("%dth character writtten to file was %c, but %c was read from file\n",i, buf[i], cbuff[i]);
-          rc = TEST_FAIL;
+          return TEST_FAIL;
         }
       }
     }
@@ -127,14 +132,58 @@ int main (int argc, char* argv[])
     printf("data = %s, rank=%d\n", buf,rank);
     close(fdr);
   } else {
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
     printf("Error opening read file %s: %d %s\n", filename, errno, strerror(errno));
-    rc = TEST_FAIL;
+    return TEST_FAIL;
   }
   /* delete association information */
   shuffile_remove(comm_world, comm_store, "/dev/shm/shuffle");
 
   MPI_Comm_free(&comm_store);
   MPI_Comm_free(&comm_restart);
+
+  //null tests
+  int rc_null;
+  rc_null = shuffile_create(comm_world, comm_store, 1, filelist, NULL);
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_create succeded with NULL name parameter\n");
+    return TEST_FAIL;
+  }
+
+  rc_null = shuffile_migrate(comm_world, comm_store, NULL);
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_migrate succeded with NULL name parameter\n");
+    return TEST_FAIL;
+  }
+
+  rc_null = shuffile_remove(comm_world, comm_store, NULL);
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_remove succeded with NULL name parameter\n");
+    return TEST_FAIL;
+  }
+
+  //MPI_COMM_NULL tests
+  rc_null = shuffile_create(MPI_COMM_NULL, MPI_COMM_NULL, 1, filelist, "/dev/shm/shuffle");
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_create succeded with MPI_COMM_NULL comm parameters\n");
+    return TEST_FAIL;
+  }
+  rc_null = shuffile_migrate(MPI_COMM_NULL, MPI_COMM_NULL, "/dev/shm/shuffle");
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_migrate succeded with MPI_COMM_NULL comm parameters\n");
+    return TEST_FAIL;
+  }
+  rc_null = shuffile_remove(MPI_COMM_NULL, MPI_COMM_NULL, "/dev/shm/shuffle");
+  if(rc_null == SHUFFILE_SUCCESS){
+    printf ("Error in line %d, file %s, function %s.\n", __LINE__, __FILE__, __func__);
+    printf("shuffile_remove succeded with MPI_COMM_NULL comm parameters\n");
+    return TEST_FAIL;
+  }
 
   shuffile_finalize();
 

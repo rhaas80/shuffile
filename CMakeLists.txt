@@ -58,6 +58,7 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/src)
 ADD_SUBDIRECTORY(src)
 
  INCLUDE(CTest)
+ INCLUDE(SHUFFILE_ADD_TEST)
  ADD_SUBDIRECTORY(test)
 
 # Generate config.h with all our build #defs
